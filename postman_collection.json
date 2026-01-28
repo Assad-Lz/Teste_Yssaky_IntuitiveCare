@@ -1,0 +1,84 @@
+{
+  "info": {
+    "name": "Intuitive Care Assessment API",
+    "description": "Coleção de testes para a API de Despesas de Operadoras (Intuitive Care).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Listar Operadoras (Paginado)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://127.0.0.1:8000/api/operadoras?page=1&limit=10",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8000",
+          "path": ["api", "operadoras"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "10" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Buscar Operadora por Razão Social",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://127.0.0.1:8000/api/operadoras?search=UNIMED",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8000",
+          "path": ["api", "operadoras"],
+          "query": [{ "key": "search", "value": "UNIMED" }]
+        }
+      }
+    },
+    {
+      "name": "Detalhes da Operadora (CNPJ)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://127.0.0.1:8000/api/operadoras/32688636000189",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8000",
+          "path": ["api", "operadoras", "32688636000189"]
+        }
+      }
+    },
+    {
+      "name": "Histórico de Despesas",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://127.0.0.1:8000/api/operadoras/32688636000189/despesas",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8000",
+          "path": ["api", "operadoras", "32688636000189", "despesas"]
+        }
+      }
+    },
+    {
+      "name": "Estatísticas Gerais (Dashboard)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://127.0.0.1:8000/api/estatisticas",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8000",
+          "path": ["api", "estatisticas"]
+        }
+      }
+    }
+  ]
+}
