@@ -118,6 +118,13 @@ python -m pytest
 
 **Justificativa:** O dataset consolidado é leve o suficiente para caber na RAM. Isso elimina a latência de I/O de disco e a complexidade de configurar um servidor SQL externo, atendendo ao princípio KISS (Keep It Simple, Stupid) solicitado no teste.
 
+**Nota Importante:** Mesmo utilizando CSV em memória na API, os scripts SQL solicitados estão **totalmente disponíveis** na pasta [sql/](sql/) do projeto. O arquivo [sql/queries.sql](sql/queries.sql) contém:
+- **DDL Statements:** CREATE TABLE com estrutura normalizada para `operadoras` e `despesas`
+- **Performance Indexes:** Índices estratégicos para otimizar consultas
+- **3 Analytical Queries:** Implementações SQL completas das análises de negócio (crescimento de despesas, distribuição por UF, operadoras acima da média)
+
+Isso permite que a solução seja facilmente migrada para um banco de dados SQL quando necessário, sem qualquer modificação nas queries.
+
 ### Tratamento de Encoding Robusto (ETL)
 
 **Decisão:** Implementar uma lógica de leitura híbrida no ETL.
