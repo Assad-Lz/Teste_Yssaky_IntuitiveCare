@@ -1,162 +1,81 @@
-"""
-Project: ANS Data ETL Pipeline
-Author: Yssaky Assad Luz
-Module: Data Processing & Consolidation
-Description: 
-    Reads raw CSV files, filters for 'Despesas com Eventos/Sinistros',
-    standardizes columns, handles inconsistencies, and generates the final 
-    consolidated dataset.
-"""
-
 import pandas as pd
-import os
 import glob
+import os
 import zipfile
 
-# --- Configuration ---
-DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
-OUTPUT_CSV = "consolidado_despesas.csv"
-OUTPUT_ZIP = "consolidado_despesas.zip"
-
-def standardize_columns(df):
-    """
-    Maps varying column names from ANS files to a standard schema.
-    ANS files often change column headers (e.g., 'CD_OPERADORA' vs 'REG_ANS').
-    """
-    # Map common variations to our target names
-    # Target structure: REG_ANS, Data, Descricao, Valor
-    column_map = {
-        'CD_OPERADORA': 'RegistroANS',
-        'REG_ANS': 'RegistroANS',
-        'DATA': 'Data',
-        'DT_REFERENCIA': 'Data',
-        'CD_CONTA_CONTABIL': 'CodigoConta',
-        'DESCRICAO': 'Descricao',
-        'VL_SALDO_FINAL': 'ValorDespesas',
-        'VL_SALDO_INICIAL': 'ValorInicial' # Optional, kept for context
-    }
-    
-    # Normalize current dataframe columns to uppercase for matching
-    df.columns = [c.upper().strip() for c in df.columns]
-    
-    # Rename using the map
-    df.rename(columns=column_map, inplace=True)
-    return df
-
 def process_data():
-    print(f"[{__author__}] Starting ETL Process - Transformation Phase...")
+    print("[ETL] Starting Processing Phase...")
     
-    # 1. List all CSV files in the data directory
-    csv_files = glob.glob(os.path.join(DATA_DIR, "*.csv"))
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DATA_DIR = os.path.join(BASE_DIR, '..', 'data')
+    OUTPUT_FILE = os.path.join(DATA_DIR, 'consolidado_despesas.csv')
     
-    if not csv_files:
-        print("CRITICAL: No CSV files found in /data. Run extraction first.")
-        return
-
-    all_data = []
-
-    for file_path in csv_files:
-        print(f"Reading file: {os.path.basename(file_path)}")
-        
+    all_files = glob.glob(os.path.join(DATA_DIR, '*202*.csv'))
+    
+    df_list = []
+    
+    for filename in all_files:
+        if "consolidado" in filename or "Relatorio" in filename:
+            continue
+            
+        print(f"Reading file: {os.path.basename(filename)}")
         try:
-            # Trade-off: Using 'latin1' encoding and ';' separator 
-            # standard for Brazilian government open data.
-            # 'thousands' parameter handles '1.000,00' formatting if needed, 
-            # but usually ANS uses ',' as decimal.
-            df = pd.read_csv(
-                file_path, 
-                sep=';', 
-                encoding='latin1', 
-                decimal=',',
-                on_bad_lines='skip' # Robustness: skip corrupted lines
-            )
+            # TENTATIVA 1: UTF-8 (Novo padrão da ANS)
+            try:
+                df = pd.read_csv(filename, sep=';', encoding='utf-8', dtype=str)
+            except UnicodeDecodeError:
+                # TENTATIVA 2: Latin-1 (Fallback para arquivos antigos)
+                print(f"UTF-8 failed for {filename}, trying Latin-1...")
+                df = pd.read_csv(filename, sep=';', encoding='latin1', dtype=str)
             
-            # Standardize column names
-            df = standardize_columns(df)
+            # Limpeza de colunas
+            df.columns = [c.replace('"', '').strip() for c in df.columns]
             
-            # 2. FILTERING STRATEGY (The "Intelligent" part) 
-            # We need "Despesas com Eventos/Sinistros". 
-            # Usually Account Group 4 in accounting plans (4.1.1...)
-            # We filter by Description containing specific keywords.
+            # Extrair data do nome do arquivo
+            base_name = os.path.basename(filename)
+            if 'T' in base_name:
+                trimestre = base_name.split('T')[0] + 'T'
+                ano = base_name.split('T')[1].split('.')[0]
+                df['Trimestre'] = trimestre
+                df['Ano'] = ano
             
-            # Ensure 'Descricao' exists before filtering
-            if 'Descricao' in df.columns:
-                # Filter for "EVENTOS" or "SINISTROS" (Case insensitive)
-                mask = df['Descricao'].str.contains('EVENTOS|SINISTRO', case=False, na=False)
-                df_filtered = df[mask].copy()
+            # Normalizar nome da coluna de valor
+            if 'VL_SALDO_FINAL' in df.columns:
+                df.rename(columns={'VL_SALDO_FINAL': 'ValorDespesas'}, inplace=True)
+            elif 'Valor' in df.columns:
+                df.rename(columns={'Valor': 'ValorDespesas'}, inplace=True)
                 
-                # If file had data, extract Quarter/Year from filename or Date column
-                if not df_filtered.empty:
-                    # Enriching with Year/Quarter (Assuming file name has 1T2025 format or similar)
-                    filename = os.path.basename(file_path)
-                    
-                    # Basic extraction logic (Robustness for 2025 files)
-                    if '2025' in filename:
-                        df_filtered['Ano'] = 2025
-                    else:
-                        df_filtered['Ano'] = 2023 # Fallback
-                        
-                    # Derive 'Trimestre' from filename if possible
-                    if '1T' in filename: df_filtered['Trimestre'] = '1T'
-                    elif '2T' in filename: df_filtered['Trimestre'] = '2T'
-                    elif '3T' in filename: df_filtered['Trimestre'] = '3T'
-                    elif '4T' in filename: df_filtered['Trimestre'] = '4T'
-                    else: df_filtered['Trimestre'] = 'UNK'
-
-                    all_data.append(df_filtered)
-            else:
-                print(f"WARNING: File {file_path} lacks 'Descricao' column. Skipping.")
-
+            # Converter valor monetário (BR para US)
+            if 'ValorDespesas' in df.columns:
+                df['ValorDespesas'] = df['ValorDespesas'].str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
+                df['ValorDespesas'] = pd.to_numeric(df['ValorDespesas'], errors='coerce')
+            
+            # Renomear colunas
+            rename_map = {
+                'REG_ANS': 'RegistroANS',
+                'CD_CONTA_CONTABIL': 'ContaContabil',
+                'DESCRICAO': 'Descricao'
+            }
+            df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
+            
+            df_list.append(df)
+            
         except Exception as e:
-            print(f"Error reading {file_path}: {e}")
+            print(f"Error processing {filename}: {e}")
 
-    # 3. CONSOLIDATION [cite: 41]
-    if all_data:
-        full_df = pd.concat(all_data, ignore_index=True)
+    if df_list:
+        full_df = pd.concat(df_list, ignore_index=True)
         
-        # 4. INCONSISTENCY HANDLING [cite: 43]
-        print("Handling inconsistencies...")
+        # Salvar em UTF-8 PURO
+        full_df.to_csv(OUTPUT_FILE, index=False, sep=';', encoding='utf-8')
+        print(f"Consolidated CSV saved to: {OUTPUT_FILE} (UTF-8)")
         
-        # A. Remove duplicates
-        initial_count = len(full_df)
-        full_df.drop_duplicates(inplace=True)
-        print(f"Removed {initial_count - len(full_df)} duplicates.")
-        
-        # B. Handle Negative/Zero Values [cite: 48]
-        # Strategy: Accounting usually has negatives for reversals. We keep them but flag if needed.
-        # Requirement says "Document how you treated". We filter out exact zeros as they add no value.
-        full_df = full_df[full_df['ValorDespesas'] != 0]
-        
-        # C. Missing CNPJ/Razao Social check
-        # As expected, these files likely only have 'RegistroANS'.
-        # We will add placeholders to match the requested output format.
-        if 'CNPJ' not in full_df.columns:
-            full_df['CNPJ'] = 'Unavailable (See Step 2.2)' 
-        if 'RazaoSocial' not in full_df.columns:
-            full_df['RazaoSocial'] = 'Unavailable (See Step 2.2)'
-
-        # Select final columns as requested 
-        # Note: We prioritize RegistroANS as the real ID available
-        final_columns = ['RegistroANS', 'CNPJ', 'RazaoSocial', 'Trimestre', 'Ano', 'ValorDespesas', 'Descricao']
-        
-        # Keep only available columns from the list
-        cols_to_keep = [c for c in final_columns if c in full_df.columns]
-        full_df = full_df[cols_to_keep]
-
-        # 5. SAVE & COMPRESS 
-        output_path = os.path.join(DATA_DIR, OUTPUT_CSV)
-        full_df.to_csv(output_path, index=False, encoding='utf-8', sep=';')
-        print(f"Consolidated CSV saved to: {output_path}")
-
-        zip_path = os.path.join(DATA_DIR, OUTPUT_ZIP)
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-            zf.write(output_path, arcname=OUTPUT_CSV)
-        print(f"Compressed file created: {zip_path}")
-        
+        # Gerar ZIP
+        with zipfile.ZipFile(OUTPUT_FILE.replace('.csv', '.zip'), 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.write(OUTPUT_FILE, arcname='consolidado_despesas.csv')
+            
     else:
-        print("No matching data found to consolidate.")
+        print("No data found.")
 
 if __name__ == "__main__":
-    # Defining author variable for the print statement
-    __author__ = "Yssaky [Seu Sobrenome]"
     process_data()

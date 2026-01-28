@@ -15,10 +15,10 @@ import os
 app = FastAPI(
     title="Intuitive Care Assessment API",
     description="API to query Operator Expenses and Metrics",
-    version="2.1.0"
+    version="2.2.0"
 )
 
-# Enable CORS
+# Enable CORS (Cross-Origin Resource Sharing)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,68 +36,77 @@ EXPENSES_FILE = os.path.join(DATA_DIR, 'consolidado_despesas.csv')
 print("Loading datasets into memory...")
 
 def load_data():
-    """Helper to load and normalize CSV data"""
+    """
+    Helper to load and normalize CSV data with Robust Encoding strategies.
+    Handles 'Mojibake' (bad encoding) by trying UTF-8 first, then Latin-1.
+    """
+    
+    # --- 1. Load Operators (Cadastro) ---
     try:
-        # 1. Load Operators
-        # FIX ENCODING: Try UTF-8 first (Modern ANS standard), then Latin1 fallback
         try:
+            # First try: Modern UTF-8 (Standard for current Data Pipelines)
             df_ops = pd.read_csv(CADASTRO_FILE, sep=';', encoding='utf-8', dtype=str)
         except UnicodeDecodeError:
+            # Fallback: Latin-1 (Common in older government legacy files)
             df_ops = pd.read_csv(CADASTRO_FILE, sep=';', encoding='latin1', dtype=str)
-        except:
-             # Fallback for comma separator
+        except Exception:
+            # Last resort fallback
             df_ops = pd.read_csv(CADASTRO_FILE, sep=',', encoding='utf-8', dtype=str)
             
-        # Normalize Column Names
+        # Normalize Column Names (Upper case and stripped)
         df_ops.columns = [c.upper().strip() for c in df_ops.columns]
         
         rename_map = {}
         for col in df_ops.columns:
-            # FIX COLUMN MAPPING: Explicitly look for REGISTRO_OPERADORA
-            if col == 'REGISTRO_OPERADORA': 
-                rename_map[col] = 'RegistroANS'
-            elif 'REGISTRO' in col and 'ANS' in col and 'DATA' not in col: 
-                rename_map[col] = 'RegistroANS'
-            elif 'CNPJ' in col: 
-                rename_map[col] = 'CNPJ'
-            elif 'RAZAO' in col: 
-                rename_map[col] = 'RazaoSocial'
-            elif 'UF' in col: 
-                rename_map[col] = 'UF'
-            elif 'MODALIDADE' in col:
-                rename_map[col] = 'Modalidade'
+            if col == 'REGISTRO_OPERADORA': rename_map[col] = 'RegistroANS'
+            elif 'REGISTRO' in col and 'ANS' in col and 'DATA' not in col: rename_map[col] = 'RegistroANS'
+            elif 'CNPJ' in col: rename_map[col] = 'CNPJ'
+            elif 'RAZAO' in col: rename_map[col] = 'RazaoSocial'
+            elif 'UF' in col: rename_map[col] = 'UF'
+            elif 'MODALIDADE' in col: rename_map[col] = 'Modalidade'
             
         df_ops.rename(columns=rename_map, inplace=True)
-        
-        # Verify if critical column exists
-        if 'RegistroANS' not in df_ops.columns:
-            print(f"CRITICAL: 'RegistroANS' not found in operators. Columns: {df_ops.columns}")
-
-        # 2. Load Expenses
-        # Expenses usually come from our ETL which saves as UTF-8
-        df_exp = pd.read_csv(EXPENSES_FILE, sep=';', encoding='utf-8')
-        
-        # Ensure ID columns are strings for matching
-        if 'RegistroANS' in df_ops.columns:
-            df_ops['RegistroANS'] = df_ops['RegistroANS'].astype(str).str.replace(r'\.0$', '', regex=True)
-            
-        if 'RegistroANS' in df_exp.columns:
-            df_exp['RegistroANS'] = df_exp['RegistroANS'].astype(str).str.replace(r'\.0$', '', regex=True)
-
-        return df_ops, df_exp
-    
     except Exception as e:
-        print(f"CRITICAL: Error loading data. Ensure ETL has run. Details: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+        print(f"CRITICAL: Error loading Operators. Details: {e}")
+        df_ops = pd.DataFrame()
 
-# Global Dataframes
+    # --- 2. Load Expenses (Despesas) ---
+    try:
+        try:
+            # Try UTF-8 first (Our ETL output format)
+            # low_memory=False prevents DtypeWarning on mixed types columns
+            df_exp = pd.read_csv(EXPENSES_FILE, sep=';', encoding='utf-8', low_memory=False)
+        except UnicodeDecodeError:
+            print("Warning: Expenses file is not UTF-8. Falling back to Latin-1.")
+            df_exp = pd.read_csv(EXPENSES_FILE, sep=';', encoding='latin1', low_memory=False)
+            
+    except Exception as e:
+        print(f"CRITICAL: Error loading Expenses. Ensure ETL has run. Details: {e}")
+        df_exp = pd.DataFrame()
+
+    # --- Data Cleaning & Joining Prep ---
+    # Ensure Join Keys are strings and clean of floating point artifacts (e.g. "12345.0" -> "12345")
+    if not df_ops.empty and 'RegistroANS' in df_ops.columns:
+        df_ops['RegistroANS'] = df_ops['RegistroANS'].astype(str).str.replace(r'\.0$', '', regex=True)
+        
+    if not df_exp.empty and 'RegistroANS' in df_exp.columns:
+        df_exp['RegistroANS'] = df_exp['RegistroANS'].astype(str).str.replace(r'\.0$', '', regex=True)
+
+    return df_ops, df_exp
+
+# Initialize Global Dataframes
 df_operators, df_expenses = load_data()
 
 # --- Routes ---
 
 @app.get("/")
 def health_check():
-    return {"status": "online", "operators_loaded": len(df_operators)}
+    """Simple health check to verify API is running and data is loaded."""
+    return {
+        "status": "online", 
+        "operators_loaded": len(df_operators), 
+        "expenses_loaded": len(df_expenses)
+    }
 
 @app.get("/api/operadoras")
 def list_operadoras(
@@ -105,23 +114,26 @@ def list_operadoras(
     limit: int = Query(10, ge=1, le=100, description="Items per page"),
     search: str = Query(None, description="Search by Razao Social")
 ):
+    """
+    Lists all operators with pagination and optional text search.
+    """
     filtered_df = df_operators.copy()
     
     if search:
+        # Case-insensitive search
         mask = filtered_df['RazaoSocial'].str.contains(search, case=False, na=False)
         filtered_df = filtered_df[mask]
 
+    # Pagination Logic
     total = len(filtered_df)
     start = (page - 1) * limit
     end = start + limit
     
     subset = filtered_df.iloc[start:end]
     
-    # FIX: .fillna("") prevents JSON serialization errors
-    data = subset.fillna("").to_dict(orient="records")
-    
+    # Return formatted JSON (fillna handles NaN values safely)
     return {
-        "data": data,
+        "data": subset.fillna("").to_dict(orient="records"),
         "meta": {
             "total": total,
             "page": page,
@@ -132,10 +144,13 @@ def list_operadoras(
 
 @app.get("/api/operadoras/{cnpj}")
 def get_operadora_details(cnpj: str):
-    # Robust CNPJ cleanup
+    """
+    Returns registration details for a specific operator by CNPJ.
+    """
+    # Clean up input CNPJ (remove . / -)
     clean_cnpj = str(cnpj).replace('.', '').replace('/', '').replace('-', '').strip()
     
-    # Ensure column is string and clean
+    # Create temp column for matching
     df_operators['CNPJ_Clean'] = df_operators['CNPJ'].astype(str).str.replace(r'\D', '', regex=True)
     
     match = df_operators[df_operators['CNPJ_Clean'] == clean_cnpj]
@@ -143,14 +158,17 @@ def get_operadora_details(cnpj: str):
     if match.empty:
         raise HTTPException(status_code=404, detail="Operadora not found")
     
-    # Return first match
     return match.iloc[0].fillna("").to_dict()
 
 @app.get("/api/operadoras/{cnpj}/despesas")
 def get_operadora_expenses(cnpj: str):
+    """
+    Returns historical expenses for a specific operator.
+    Joins Operators and Expenses via RegistroANS.
+    """
     clean_cnpj = str(cnpj).replace('.', '').replace('/', '').replace('-', '').strip()
     
-    # 1. Find Operator ID
+    # 1. Find Operator ID (RegistroANS)
     df_operators['CNPJ_Clean'] = df_operators['CNPJ'].astype(str).str.replace(r'\D', '', regex=True)
     op_match = df_operators[df_operators['CNPJ_Clean'] == clean_cnpj]
     
@@ -159,10 +177,10 @@ def get_operadora_expenses(cnpj: str):
         
     registro_ans = str(op_match.iloc[0]['RegistroANS'])
     
-    # 2. Filter Expenses
+    # 2. Filter Expenses by this ID
     expenses_match = df_expenses[df_expenses['RegistroANS'] == registro_ans]
     
-    # Sort by date (Ano/Trimestre) descending
+    # Sort by date (Year/Quarter) descending
     if not expenses_match.empty:
         expenses_match = expenses_match.sort_values(by=['Ano', 'Trimestre'], ascending=False)
 
@@ -170,18 +188,20 @@ def get_operadora_expenses(cnpj: str):
 
 @app.get("/api/estatisticas")
 def get_statistics():
+    """
+    Returns aggregated statistics for the Dashboard chart.
+    """
     try:
         # Group by Operator and Sum Expenses
         agg = df_expenses.groupby('RegistroANS')['ValorDespesas'].sum().reset_index()
         
-        # Join to get Names and UF
-        # Use inner join to ensure we only show operators that exist in both
+        # Inner join to ensure we only count operators that exist in both tables
         merged = pd.merge(agg, df_operators[['RegistroANS', 'RazaoSocial', 'UF']], on='RegistroANS', how='inner')
         
-        # Top 5 Operators
+        # Top 5 Operators by Expense
         top_5 = merged.sort_values(by='ValorDespesas', ascending=False).head(5)
         
-        # Expenses by UF
+        # Total Expenses by State (UF) - Used for Chart
         by_uf = merged.groupby('UF')['ValorDespesas'].sum().reset_index().sort_values(by='ValorDespesas', ascending=False)
         
         return {
