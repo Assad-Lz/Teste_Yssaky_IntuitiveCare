@@ -19,7 +19,6 @@ import {
 } from 'chart.js';
 import api from '../services/api';
 
-// Registra os componentes necessários do Chart.js
 ChartJS.register(
   Title,
   Tooltip,
@@ -45,16 +44,18 @@ export default {
   async mounted() {
     try {
       const response = await api.getEstatisticas();
+      // O backend retorna: { despesas_por_uf: [{ uf: 'SP', total: 5000 }, ...] }
       const dadosUF = response.data.despesas_por_uf;
 
-      // Prepara os dados para o gráfico
       this.chartData = {
-        labels: dadosUF.map((item) => item.UF),
+        // CORREÇÃO AQUI: Use .uf (minúsculo)
+        labels: dadosUF.map((item) => item.uf),
         datasets: [
           {
             label: 'Total de Despesas (R$)',
             backgroundColor: '#42b883',
-            data: dadosUF.map((item) => item.ValorDespesas),
+            // CORREÇÃO AQUI: Use .total (alias definido na query SQL)
+            data: dadosUF.map((item) => item.total),
           },
         ],
       };

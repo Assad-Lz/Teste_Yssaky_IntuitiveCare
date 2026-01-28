@@ -1,33 +1,34 @@
 # Intuitive Care - Teste Técnico (Fullstack Data Engineer)
 
-Este repositório contém a solução completa para o desafio técnico da Intuitive Care. O projeto consiste em um Pipeline de Dados (ETL) automatizado que alimenta uma API RESTful e um Dashboard interativo, tudo encapsulado em containers Docker para fácil reprodução.
+Este repositório contém a solução completa para o desafio técnico da Intuitive Care. O projeto evoluiu para uma arquitetura robusta baseada em **Banco de Dados SQL**, consistindo em um Pipeline de Dados (ETL) que alimenta um PostgreSQL, uma API RESTful performática e um Dashboard interativo, tudo orquestrado via Docker.
 
 ## 🚀 Funcionalidades
 
 ### 1. Engenharia de Dados (ETL)
 
-- **Extração:** Scripts automáticos (`etl/main.py`) que baixam arquivos do FTP da ANS (Cadastros e Demonstrações Contábeis).
-- **Transformação:** Limpeza de dados robusta e padronização de encodings. O script converte arquivos legados (Latin-1) para **UTF-8**, corrigindo problemas de acentuação (ex: "PARTICIPAÇÃO").
-- **Enriquecimento:** Cruzamento (Join) de dados financeiros com dados cadastrais usando `RegistroANS` como chave primária.
+- **Extração & Carga:** Pipeline otimizado (`etl/pipeline_sql.py`) que processa arquivos CSV brutos e os persiste em um banco PostgreSQL.
+- **Tratamento de Dados:** Detecção e correção automática de encodings (UTF-8 vs Latin-1) e limpeza de identificadores (remoção de sufixos `.0` e espaços).
+- **Performance:** Implementação de **Batch Processing** (inserção em lotes de 50.000 registros), permitindo o processamento de milhões de linhas sem estourar a memória RAM.
 
 ### 2. Backend (API)
 
-- Desenvolvido em **FastAPI** (Python 3.10).
-- Estratégia **In-Memory Data**: Carregamento otimizado dos CSVs processados com Pandas para garantir respostas em milissegundos.
-- **Testes Automatizados:** Cobertura de testes unitários (`pytest`) garantindo a integridade dos endpoints.
+- Desenvolvido em **FastAPI** (Python 3.10) com **SQLAlchemy**.
+- **Arquitetura SQL:** Consultas otimizadas diretamente no banco de dados, utilizando `LIMIT/OFFSET` para paginação real e agregações (`SUM`, `GROUP BY`) via query.
+- **Testes Unitários:** Implementação de testes com **Mocks** (`unittest.mock`), garantindo que a lógica da API seja validada isoladamente, sem depender do estado do banco de dados.
 - Documentação interativa automática via Swagger UI.
 
 ### 3. Frontend (Dashboard)
 
 - Aplicação **Vue.js 3** construída com **Vite**.
-- **Visualização:** Gráfico de barras (Chart.js) exibindo o Top 5 Despesas por UF.
-- **Busca & Filtro:** Pesquisa textual reativa por Operadora ou CNPJ com paginação controlada pelo servidor.
-- Design limpo, responsivo e com tratamento correto de caracteres especiais.
+- **Integração Real:** Consumo de dados persistidos no PostgreSQL.
+- **Visualização:** Gráfico de barras (Chart.js) exibindo o Top 5 Despesas por UF (query analítica).
+- **Busca & Detalhes:** Pesquisa textual por Razão Social e visualização detalhada de despesas históricas da operadora.
 
 ### 4. DevOps & Infraestrutura
 
-- **Docker:** Ambientes isolados (Containerização) para Backend (Python 3.10) e Frontend (Node.js 22+).
-- **Docker Compose:** Orquestração completa do ambiente com um único comando.
+- **Docker:** Ambientes isolados para Backend, Frontend e **Banco de Dados**.
+- **PostgreSQL:** Container dedicado para persistência dos dados.
+- **Docker Compose:** Orquestração completa (App + DB) com reinício automático e redes internas configuradas.
 
 ---
 
@@ -35,9 +36,10 @@ Este repositório contém a solução completa para o desafio técnico da Intuit
 
 - **Linguagem:** Python 3.10, JavaScript
 - **Frameworks:** FastAPI, Vue.js 3
-- **Dados:** Pandas, NumPy
+- **Banco de Dados:** PostgreSQL 15
+- **ORM:** SQLAlchemy
 - **Infraestrutura:** Docker, Docker Compose
-- **Testes:** Pytest, HTTPX
+- **Testes:** Pytest (com Mocks), HTTPX
 
 ---
 
@@ -48,30 +50,33 @@ A maneira mais simples e robusta de executar o projeto.
 1. **Clone o repositório:**
 
 ```bash
-git clone https://github.com/Assad-Lz/Teste_Yssaky_IntuitiveCare.git
+git clone [https://github.com/Assad-Lz/Teste_Yssaky_IntuitiveCare.git](https://github.com/Assad-Lz/Teste_Yssaky_IntuitiveCare.git)
 cd Teste_Yssaky_IntuitiveCare
-```
 
-2. **Execute o Ambiente:**
 
-```bash
-docker compose up --build
-```
+Suba o Ambiente:
 
-3. **Acesse a aplicação:**
+Bash
+docker compose up --build -d
+Aguarde cerca de 15 segundos para o Banco de Dados inicializar.
 
-- **Dashboard (Frontend):** http://localhost:5173
-- **Documentação da API:** http://localhost:8000/docs
+Popule o Banco de Dados (ETL): Como o banco inicia vazio, execute o script de carga para processar os CSVs e inseri-los no PostgreSQL:
 
----
+Bash
+docker compose exec backend python etl/pipeline_sql.py
+Você verá uma barra de progresso indicando a inserção dos lotes.
 
-## ⚙️ Como Rodar (Manual / Sem Docker)
+Acesse a aplicação:
 
-Caso prefira executar localmente em sua máquina:
+Painel de controle (interface do usuário): http://localhost:5173
 
-### Backend & ETL
+Documentação da API: http: // localhost: 8000 / docs
 
-```bash
+⚙️ Como rolar (Híbrido / Depuração)
+Caso queira rodar os scripts localmente mantendo apenas o banco no Docker:
+
+Backend e ETL
+Bash
 # Crie e ative o ambiente virtual
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
@@ -80,64 +85,49 @@ source venv/bin/activate  # Linux/Mac
 # Instale as dependências
 pip install -r requirements.txt
 
-# Execute o ETL (Necessário na primeira execução)
-python etl/main.py        # Download
-python etl/processing.py  # Processamento (Correção UTF-8)
-python etl/enrichment.py  # Enriquecimento
+# Garanta que o banco está rodando no Docker
+docker compose up -d db
+
+# Execute o ETL
+python etl/pipeline_sql.py
 
 # Inicie a API
 uvicorn backend.main:app --reload
-```
-
-### Frontend
-
-```bash
+Front-end
+Bash
 cd frontend
 npm install
 npm run dev
+🧪 Executando Testes
+O projeto utiliza Mocks para testar a API sem necessidade de conexão real com o banco de dados.
+
+Bash
+# Rodando via Docker (Recomendado)
+docker compose exec backend pytest
+
+# Ou localmente (com venv ativado)
+pytest
+⚖️ Trade-offs e Decisões de Arquitetura
+Migração de "CSV em Memória" para SQL (PostgreSQL)
+Decisão: Migrar a persistência de dados para um banco relacional.
+
+Justificativa: Embora a solução em memória fosse rápida para testes pequenos, ela não é escalável para o volume real de dados da saúde suplementar. O uso do PostgreSQL garante:
+
+Integridade Referencial: As despesas só são inseridas se a operadora existir.
+
+Eficiência de Memória: O Python não precisa carregar 2GB de dados na RAM; ele busca apenas a página solicitada (10 itens).
+
+Capacidade Analítica: Consultas complexas (como Agrupamento por UF) são delegadas ao motor do banco de dados, que é otimizado para isso.
+
+Estratégia de Testes com Mocks
+Decisão: Usar unittest.mockpara simular a conexão com o banco nos testes.
+
+Justificativa: Testes de integração que dependem de um banco real são lentos e frágeis (quebram se o banco estiver vazio ou sujo). Ao usar Mocks, garantimos que a lógica da API (rotas, filtros, formato do JSON) esteja correta em milissegundos, independentemente do estado do Docker.
+
+ETL com Processamento em Lote
+Decisão: Inserção no banco em "chunks" (lotes) de 50.000 registros.
+
+Justificativa: Tentar inserir milhões de linhas de uma vez (Bulk Insert total) frequentemente causa timeouts ou estouro de memória. A abordagem em lotes oferece um equilíbrio ideal entre performance de escrita e estabilidade do sistema, além de fornecer feedback visual de progresso.
+
+Autor: Yssaky Assad
 ```
-
----
-
-## 🧪 Executando Testes
-
-O projeto conta com testes unitários para validar a lógica da API.
-
-```bash
-# Na raiz do projeto (com venv ativado)
-python -m pytest
-```
-
----
-
-## ⚖️ Trade-offs e Decisões de Arquitetura
-
-### CSV em Memória vs Banco de Dados SQL
-
-**Decisão:** Servir os dados via Pandas (In-Memory).
-
-**Justificativa:** O dataset consolidado é leve o suficiente para caber na RAM. Isso elimina a latência de I/O de disco e a complexidade de configurar um servidor SQL externo, atendendo ao princípio KISS (Keep It Simple, Stupid) solicitado no teste.
-
-**Nota Importante:** Mesmo utilizando CSV em memória na API, os scripts SQL solicitados estão **totalmente disponíveis** na pasta [sql/](sql/) do projeto. O arquivo [sql/queries.sql](sql/queries.sql) contém:
-
-- **DDL Statements:** CREATE TABLE com estrutura normalizada para `operadoras` e `despesas`
-- **Performance Indexes:** Índices estratégicos para otimizar consultas
-- **3 Analytical Queries:** Implementações SQL completas das análises de negócio (crescimento de despesas, distribuição por UF, operadoras acima da média)
-
-Isso permite que a solução seja facilmente migrada para um banco de dados SQL quando necessário, sem qualquer modificação nas queries.
-
-### Tratamento de Encoding Robusto (ETL)
-
-**Decisão:** Implementar uma lógica de leitura híbrida no ETL.
-
-**Justificativa:** Arquivos da ANS historicamente variam entre Latin-1 e UTF-8. O script tenta ler como UTF-8 primeiro; se falhar, faz fallback para Latin-1 e salva o arquivo final sempre em UTF-8 puro. Isso garante que o Backend e Frontend nunca sofram com caracteres corrompidos ("Mojibake").
-
-### Frontend: Renderização Condicional vs Router
-
-**Decisão:** Utilizar `v-if` para alternar entre a Lista e os Detalhes.
-
-**Justificativa:** Para uma aplicação de escopo fechado (2 telas), configurar um Vue Router completo adicionaria complexidade desnecessária ao código.
-
----
-
-**Autor:** Yssaky Assad

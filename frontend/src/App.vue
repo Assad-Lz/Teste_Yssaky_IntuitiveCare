@@ -28,13 +28,16 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="op in operadoras" :key="op.REGISTRO_OPERADORA">
-              <td>{{ op.RegistroANS }}</td>
-              <td>{{ op.CNPJ }}</td>
-              <td>{{ op.RazaoSocial }}</td>
-              <td>{{ op.UF }}</td>
+            <tr v-for="op in operadoras" :key="op.registro_ans">
+              <td>{{ op.registro_ans }}</td>
+              <td>{{ op.cnpj }}</td>
+              <td>{{ op.razao_social }}</td>
+              <td>{{ op.uf }}</td>
               <td>
-                <button class="btn-details" @click="viewDetails(op.CNPJ)">
+                <button
+                  class="btn-details"
+                  @click="viewDetails(op.registro_ans)"
+                >
                   Ver Detalhes
                 </button>
               </td>
@@ -60,14 +63,14 @@
       </button>
 
       <div class="card">
-        <h2>{{ selectedOperadora.RazaoSocial }}</h2>
+        <h2>{{ selectedOperadora.razao_social }}</h2>
         <div class="info-grid">
-          <p><strong>CNPJ:</strong> {{ selectedOperadora.CNPJ }}</p>
+          <p><strong>CNPJ:</strong> {{ selectedOperadora.cnpj }}</p>
           <p>
-            <strong>Registro ANS:</strong> {{ selectedOperadora.RegistroANS }}
+            <strong>Registro ANS:</strong> {{ selectedOperadora.registro_ans }}
           </p>
-          <p><strong>UF:</strong> {{ selectedOperadora.UF }}</p>
-          <p><strong>Modalidade:</strong> {{ selectedOperadora.Modalidade }}</p>
+          <p><strong>UF:</strong> {{ selectedOperadora.uf }}</p>
+          <p><strong>Modalidade:</strong> {{ selectedOperadora.modalidade }}</p>
         </div>
       </div>
 
@@ -83,13 +86,13 @@
           </thead>
           <tbody>
             <tr v-for="exp in expenses" :key="exp.id">
-              <td>{{ exp.Ano }}/{{ exp.Trimestre }}</td>
-              <td>{{ exp.Descricao }}</td>
-              <td class="money">{{ formatCurrency(exp.ValorDespesas) }}</td>
+              <td>{{ exp.ano }}/{{ exp.trimestre }}</td>
+              <td>{{ exp.descricao }}</td>
+              <td class="money">{{ formatCurrency(exp.valor_despesa) }}</td>
             </tr>
           </tbody>
         </table>
-        <p v-else>Nenhuma despesa registrada para o período.</p>
+        <p v-else>Nenhuma despesa registrada para esta operadora.</p>
       </div>
     </div>
   </div>
@@ -117,13 +120,15 @@ export default {
       try {
         const response = await api.getOperadoras(this.page, this.searchQuery);
         this.operadoras = response.data.data;
-        this.totalPages = response.data.meta.total_pages;
+
+        const limit = 10;
+        const total = response.data.meta.total;
+        this.totalPages = Math.ceil(total / limit) || 1;
       } catch (error) {
-        alert('Erro ao conectar com API. Verifique se o backend está rodando.');
+        console.error('Erro API:', error);
       }
     },
     handleSearch() {
-      // Debounce para não chamar a API a cada letra digitada
       clearTimeout(this.timeout);
       this.timeout = setTimeout(() => {
         this.page = 1;
@@ -136,22 +141,22 @@ export default {
         this.fetchOperadoras();
       }
     },
-    async viewDetails(cnpj) {
-      try {
-        // Busca dados da operadora e despesas em paralelo
-        const [opResponse, expResponse] = await Promise.all([
-          api.getOperadoraDetails(cnpj),
-          api.getOperadoraExpenses(cnpj),
-        ]);
-
-        this.selectedOperadora = opResponse.data;
-        this.expenses = expResponse.data;
-      } catch (error) {
-        console.error(error);
-        alert('Erro ao carregar detalhes.');
+    async viewDetails(id) {
+      const op = this.operadoras.find((o) => o.registro_ans === id);
+      if (op) {
+        this.selectedOperadora = op;
+        // Agora buscamos as despesas no backend!
+        try {
+          const expResponse = await api.getOperadoraExpenses(id);
+          this.expenses = expResponse.data;
+        } catch (error) {
+          console.error('Erro ao buscar despesas:', error);
+          this.expenses = [];
+        }
       }
     },
     formatCurrency(value) {
+      if (!value) return 'R$ 0,00';
       return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
         currency: 'BRL',
@@ -165,7 +170,7 @@ export default {
 </script>
 
 <style>
-/* Estilos básicos para ficar apresentável (KISS) */
+/* Seus estilos originais mantidos */
 body {
   font-family: Arial, sans-serif;
   background-color: #f4f4f9;
@@ -181,8 +186,6 @@ header {
   text-align: center;
   color: #333;
 }
-
-/* Tabela */
 .table-container {
   background: white;
   border-radius: 8px;
@@ -206,8 +209,6 @@ th {
 tr:hover {
   background-color: #f1f1f1;
 }
-
-/* Inputs e Botões */
 .search-input {
   width: 100%;
   padding: 10px;
@@ -246,8 +247,6 @@ button {
   background-color: #ccc;
   cursor: not-allowed;
 }
-
-/* Cards de Detalhes */
 .card {
   background: white;
   padding: 20px;
