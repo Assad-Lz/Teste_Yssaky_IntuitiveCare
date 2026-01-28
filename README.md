@@ -49,7 +49,7 @@ A maneira mais simples e robusta de executar o projeto.
 
 1. **Clone o repositório:**
 
-```bash
+
 git clone [https://github.com/Assad-Lz/Teste_Yssaky_IntuitiveCare.git](https://github.com/Assad-Lz/Teste_Yssaky_IntuitiveCare.git)
 cd Teste_Yssaky_IntuitiveCare
 
@@ -130,4 +130,3 @@ Decisão: Inserção no banco em "chunks" (lotes) de 50.000 registros.
 Justificativa: Tentar inserir milhões de linhas de uma vez (Bulk Insert total) frequentemente causa timeouts ou estouro de memória. A abordagem em lotes oferece um equilíbrio ideal entre performance de escrita e estabilidade do sistema, além de fornecer feedback visual de progresso.
 
 Autor: Yssaky Assad
-```
