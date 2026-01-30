@@ -1,8 +1,5 @@
-version: '3.8'
-
 services:
-  # 1. Database Service (PostgreSQL)
-  # Automatically initializes tables using scripts in ./sql
+  # 1. Banco de Dados (PostgreSQL)
   db:
     image: postgres:15-alpine
     container_name: intuitive-db
@@ -14,23 +11,23 @@ services:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./sql:/docker-entrypoint-initdb.d # Auto-executes init.sql on first startup
+      - ./sql:/docker-entrypoint-initdb.d
 
-  # 2. Backend Service (FastAPI)
-  # Depends on the DB to start
+  # 2. Backend (FastAPI)
   backend:
     build: .
     container_name: intuitive-backend
     ports:
       - '8000:8000'
     environment:
-      DATABASE_URL: postgresql://user_intuitive:password123@db:5432/intuitive_care
+      - DATABASE_URL=postgresql://user_intuitive:password123@db:5432/intuitive_care
+      - DB_HOST=db # ESSENCIAL para o pipeline funcionar via docker compose exec
     depends_on:
       - db
     volumes:
-      - ./data:/app/data
+      - .:/app # Mapeia a raiz para acessar a pasta etl/ e data/
 
-  # 3. Frontend Service (Vue.js)
+  # 3. Frontend (Vue.js)
   frontend:
     build: ./frontend
     container_name: intuitive-frontend
